@@ -1,0 +1,9 @@
+[submodule "src/socspioneer"]
+	path = src/socspioneer
+	url = https://github.com/AlexWebb03/socspioneer.git
+[submodule "src/stage_ros2"]
+	path = src/stage_ros2
+	url = https://github.com/tuw-robotics/stage_ros2.git
+[submodule "src/Stage"]
+	path = src/Stage
+	url = https://github.com/tuw-robotics/Stage.git
