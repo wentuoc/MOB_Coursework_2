@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://wwww.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pf_localisation</name>
+  <version>3.0.0</version>
+  <description>Particle filter assignment for localisation in a map.</description>
+
+  <author email="sxs1412@bham.ac.uk">Saif Sidhik</author>
+  <maintainer email="s2276294@ed.ac.uk">Lukas Chen</maintainer>
+
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>tf2</exec_depend>
+  <exec_depend>tf_transformations</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

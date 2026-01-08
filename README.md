@@ -14,7 +14,15 @@ Go the the root directory of the repo and update all submodules.
 cd MOB_Coursework_1
 git submodule update --init --recursive
 ```
-
+Install dependencies with `rosdep`. **\*run form the root directory of the repo**.
+```
+rosdep install --from-paths src
+rosdep update
+```
 ## 2. Working with ROS
+Build your ROS workspace with `colcon`, **\*run form the root directory of the repo**.
+```
+colcon build --symlink-install
+```
 ## 3. Your tasks
 ## 4. Test your implementation with simulation
