@@ -18,8 +18,7 @@ find_package(ament_cmake REQUIRED)
 find_package(Boost COMPONENTS python REQUIRED)
 
 find_package(ament_cmake_python REQUIRED)
-find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-
+find_package(Python COMPONENTS Interpreter Development NumPy REQUIRED)
 set(CMAKE_SHARED_LIBRARY_PREFIX "")
 add_library(laser_trace SHARED src/laser_trace/laser_trace.cpp)
 
@@ -35,5 +34,6 @@ ament_python_install_package(${PROJECT_NAME})
 # Set up the libraries and header search paths for this target
 target_link_libraries(laser_trace ${Boost_LIBRARIES} ${PYTHON_LIBRARIES})
 target_include_directories(laser_trace PRIVATE ${PYTHON_INCLUDE_DIRS})
+target_include_directories(laser_trace PRIVATE ${Python_NumPy_INCLUDE_DIRS})
 
 ament_package()
