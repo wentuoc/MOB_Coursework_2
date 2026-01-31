@@ -30,7 +30,7 @@ source install/setup.bash
 ```
 
 ## 3. Your tasks
-You only have to make changes to `pf.py` under `src/pf_localisation/pf_localisation/pf.py`to implement the logic to initiate a particle cloud, resample the particle cloud and estimate a pose from your particle cloud.
+You only have to make changes to `pf.py` under `src/pf_localisation/pf_localisation/pf.py`, implement the logic to initiate a particle cloud, resample the particle cloud and estimate a pose from your particle cloud.
 
 ## 4. Test your implementation with simulation
 A example launch file is provided under `src/pf_localisation/launch/example_pf.launch.py`, you can try it with:
