@@ -1,4 +1,4 @@
-# Introduction to Mobile Robotic - Coursework 1
+# Introduction to Mobile Robotic - Coursework 2
 The objective of this exercise is for you to implement, analyze, and understand the working of a particle filter localisation algorithm. You will be working in simulation, using the `Stage` environment and `RViz 2`.
 
 ## 1. Setup your workspace
