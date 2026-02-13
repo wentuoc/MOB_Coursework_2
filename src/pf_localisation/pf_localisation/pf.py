@@ -16,6 +16,7 @@ class PFLocaliser(PFLocaliserBase):
 
         self.sensor_model = SensorModel(logger)
         self.logger = logger
+        self.weights = []
         
         # ----- Set motion model parameters
         # TO FINE TUNE
@@ -24,13 +25,13 @@ class PFLocaliser(PFLocaliserBase):
         self.ODOM_DRIFT_NOISE = 0.2 # Odometry model y axis (side-to-side) noise
 
         # ----- Sensor model parameters
-        self.NUMBER_PREDICTED_READINGS = 20     # Number of readings to predict
+        self.NUMBER_PREDICTED_READINGS = 200     # Number of readings to predict
 
         # ----- Point cloud initialisation parameters
-        self.INIT_X_NOISE = 1 # To be fine-tuned
-        self.INIT_Y_NOISE = 1
+        self.INIT_X_NOISE = 10
+        self.INIT_Y_NOISE = 10
         self.INIT_Z_NOISE = 0 # We are only in 2D
-        self.INIT_Q_NOISE = 0.1
+        self.INIT_Q_NOISE = 0.2
 
         # ----- Point cloud update parameters
         self.UPDATE_X_NOISE = 0.05
@@ -110,7 +111,7 @@ class PFLocaliser(PFLocaliserBase):
             weights.append(self.sensor_model.get_weight(scan, p)) 
         
         # Normalise weights to make it a probability distribution
-        weights = [weight/sum(weights) for weight in weights]
+        weights = [weight / sum(weights) for weight in weights]
         sampled_particles = self._systematic_resampling(self.particlecloud.poses, weights, self.NUMBER_PREDICTED_READINGS)
         
         # Add a tiny bit of noise to prevent the point cloud from collapsing
@@ -123,8 +124,14 @@ class PFLocaliser(PFLocaliserBase):
             pose_after_noise.position.z = original_pose.position.z + random.gauss(0, self.UPDATE_Z_NOISE)
             pose_after_noise.orientation = rotateQuaternion(original_pose.orientation, random.gauss(0, self.UPDATE_Q_NOISE))
             new_particles.append(pose_after_noise)
-        
+
         self.particlecloud.poses = new_particles
+
+        # Store the new weight of each new pose
+        self.weights = []
+        for pose in self.particlecloud.poses:
+            self.weights.append(self.sensor_model.get_weight(scan, pose))
+        
 
     def estimate_pose(self):
         """
@@ -143,6 +150,7 @@ class PFLocaliser(PFLocaliserBase):
             | (geometry_msgs.msg.Pose) robot's estimated pose.
          """
         
+        '''
         # Method 1: Naive Average
         particles = self.particlecloud.poses
         average_x = sum(particle.position.x for particle in particles) / self.NUMBER_PREDICTED_READINGS
@@ -160,5 +168,17 @@ class PFLocaliser(PFLocaliserBase):
         estimated_pose.position.y = average_y
         estimated_pose.position.z = average_z
         estimated_pose.orientation = average_q
+        '''
+        
+        # Method 2: Take the pose with the highest posterior probability
+        highest_weight = 0
+        best_pose_index = 0
+
+        for i in range(self.NUMBER_PREDICTED_READINGS):
+            if self.weights[i] > highest_weight:
+                highest_weight = self.weights[i]
+                best_pose_index = i
+        
+        estimated_pose = self.particlecloud.poses[best_pose_index]
 
         return estimated_pose
