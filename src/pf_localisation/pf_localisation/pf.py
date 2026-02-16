@@ -243,6 +243,7 @@ class PFLocaliser(PFLocaliserBase):
         estimated_pose.orientation = average_q
         '''
         
+        '''
         # Method 2: Take the pose with the highest posterior probability
         highest_weight = 0
         best_pose_index = 0
@@ -257,3 +258,53 @@ class PFLocaliser(PFLocaliserBase):
         self.estimated_pose_weight = highest_weight
 
         return self.estimated_pose
+        '''
+        
+        # Method 3 Compute the weighted average of the poses within a cluster of the highest-weighted pose
+        highest_weight = 0
+        best_pose_index = 0
+
+        for i in range(self.NUMBER_PREDICTED_READINGS):
+            if self.weights[i] > highest_weight:
+                highest_weight = self.weights[i]
+                best_pose_index = i
+
+        best_pose = self.particlecloud.poses[best_pose_index]
+
+        count = 0
+        sum_of_weights = 0
+        estimated_pose_x = 0
+        estimated_pose_y = 0
+        estimated_pose_z = 0
+        estimated_pose_q_angle = 0
+        
+        # Find all poses within a 0.05m distance
+        for i in range(len(self.particlecloud.poses)):
+            pose = self.particlecloud.poses[i]
+            weight = self.weights[i]
+            distance = math.sqrt((pose.position.x - best_pose.position.x) ** 2
+                                 + (pose.position.y - best_pose.position.y) ** 2
+                                 + (pose.position.z - best_pose.position.z) ** 2)
+            if distance <= 0.05:
+                estimated_pose_x += weight * pose.position.x
+                estimated_pose_y += weight * pose.position.y
+                estimated_pose_z += weight * pose.position.z
+                estimated_pose_q_angle += weight * getHeading(pose.orientation)
+                sum_of_weights += weight
+        
+        estimated_pose_x /= sum_of_weights
+        estimated_pose_y /= sum_of_weights
+        estimated_pose_z /= sum_of_weights
+        estimated_pose_q_angle /= sum_of_weights
+        estimated_pose_q = rotateQuaternion(Quaternion(x=0, y=0, z=0, w=1), estimated_pose_q_angle)
+        
+        estimated_pose = Pose()
+        estimated_pose.position.x = estimated_pose_x
+        estimated_pose.position.y = estimated_pose_y
+        estimated_pose.position.z = estimated_pose_z
+        estimated_pose.orientation = estimated_pose_q
+
+        self.previous_estimated_pose_weight = self.estimated_pose_weight # Push the previous weight into history
+        self.estimated_pose = estimated_pose
+        return self.estimated_pose
+
