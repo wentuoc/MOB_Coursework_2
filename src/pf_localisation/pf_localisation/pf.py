@@ -15,9 +15,17 @@ class PFLocaliser(PFLocaliserBase):
         super().__init__(logger, clock)
 
         self.sensor_model = SensorModel(logger)
-        self.logger = logger
-        self.weights = []
         
+        # System states
+        self.weights = []
+        self.estimated_pose = Pose()
+        self.estimated_pose_weight = 0
+        self.previous_estimated_pose_weight = 0
+        
+        # Logger
+        self.logger = logger
+        self.is_warning_raised = False
+
         # ----- Set motion model parameters
         # TO FINE TUNE
         self.ODOM_ROTATION_NOISE = 0.2 # Odometry model rotation noise
@@ -25,19 +33,20 @@ class PFLocaliser(PFLocaliserBase):
         self.ODOM_DRIFT_NOISE = 0.2 # Odometry model y axis (side-to-side) noise
 
         # ----- Sensor model parameters
-        self.NUMBER_PREDICTED_READINGS = 200     # Number of readings to predict
+        self.NUMBER_PREDICTED_READINGS = 100     # Number of readings to predict
 
         # ----- Point cloud initialisation parameters
-        self.INIT_X_NOISE = 10
-        self.INIT_Y_NOISE = 10
+        self.INIT_X_NOISE = 0.1
+        self.INIT_Y_NOISE = 0.1
         self.INIT_Z_NOISE = 0 # We are only in 2D
-        self.INIT_Q_NOISE = 0.2
+        self.INIT_Q_NOISE = 0.05
+        self.regenerate_cloud_noise = 1
 
         # ----- Point cloud update parameters
-        self.UPDATE_X_NOISE = 0.05
-        self.UPDATE_Y_NOISE = 0.05
+        self.UPDATE_X_NOISE = 0.02 # TODO: fine-tune
+        self.UPDATE_Y_NOISE = 0.02
         self.UPDATE_Z_NOISE = 0 
-        self.UPDATE_Q_NOISE = 0.05
+        self.UPDATE_Q_NOISE = 0.01
         
        
     def initialise_particle_cloud(self, initialpose):
@@ -54,33 +63,45 @@ class PFLocaliser(PFLocaliserBase):
         :Return:
             | (geometry_msgs.msg.PoseArray) poses of the particles
         """
-        initial_x = initialpose.pose.pose.position.x
-        initial_y = initialpose.pose.pose.position.y
-        initial_z = initialpose.pose.pose.position.z
-        initial_q = initialpose.pose.pose.orientation
 
-        self.particlecloud.poses = [] # Empty the current particle cloud
-        # NB this can be reconfigured to have different behaviours (e.g. remove half of the particles, etc.)
+        self.particlecloud.poses = []
+        self.estimated_pose = initialpose.pose.pose # initialpose is of type PoseWithCovarianceStamped
 
         for i in range(self.NUMBER_PREDICTED_READINGS):
-            pose_with_noise = Pose()
-            pose_with_noise.position.x = initial_x + random.gauss(0, self.INIT_X_NOISE)
-            pose_with_noise.position.y = initial_y + random.gauss(0, self.INIT_Y_NOISE)
-            pose_with_noise.position.z = initial_z + random.gauss(0, self.INIT_Z_NOISE)
-            pose_with_noise.orientation = rotateQuaternion(initial_q, random.gauss(0, self.INIT_Q_NOISE))
-            
+            pose_with_noise = self._add_noise_to_pose(initialpose.pose.pose,
+                                                      self.INIT_X_NOISE, 
+                                                      self.INIT_Y_NOISE, 
+                                                      self.INIT_Z_NOISE, 
+                                                      self.INIT_Q_NOISE)
             self.particlecloud.poses.append(pose_with_noise)
         
         return self.particlecloud
     
+    def _add_noise_to_pose(self, original_pose, x_noise, y_noise, z_noise, q_noise):
+        """Adds gaussian noise to a specified pose"""
+        pose_with_noise = Pose()
+        x = original_pose.position.x
+        y = original_pose.position.y
+        z = original_pose.position.z
+        q = original_pose.orientation
+
+        pose_with_noise.position.x = x + random.gauss(0, x_noise)
+        pose_with_noise.position.y = y + random.gauss(0, y_noise)
+        pose_with_noise.position.z = z + random.gauss(0, z_noise)
+        pose_with_noise.orientation = rotateQuaternion(q, random.gauss(0, q_noise))
+        return pose_with_noise
+        
     def _systematic_resampling(self, particles, weights, num_particles):
+        """Performs importance sampling according to the algorithm detailed in the lecture slides"""
+        # Normalise weights to make it a probability distribution
+        normalised_weights = [weight / sum(weights) for weight in weights]
         new_particles = []
 
         # Generate cdf
-        cdf = [weights[0]]
+        cdf = [normalised_weights[0]]
 
         for i in range(1, num_particles):
-            cdf.append(cdf[-1] + weights[i])
+            cdf.append(cdf[-1] + normalised_weights[i])
 
         # Initialise threshold
         thresholds = [random.uniform(0, 1/num_particles)]
@@ -103,35 +124,87 @@ class PFLocaliser(PFLocaliserBase):
         :Args:
             | scan (sensor_msgs.msg.LaserScan): laser scan to use for update
 
-         """
-         
-        weights = []
-
-        for p in self.particlecloud.poses:
-            weights.append(self.sensor_model.get_weight(scan, p)) 
+        """
         
-        # Normalise weights to make it a probability distribution
-        weights = [weight / sum(weights) for weight in weights]
-        sampled_particles = self._systematic_resampling(self.particlecloud.poses, weights, self.NUMBER_PREDICTED_READINGS)
+        self._update_weights(scan)
+
+        if max(self.weights) < 10 / 20 * self.NUMBER_PREDICTED_READINGS:
+            # From empirical observations, if the estimated pose is correct, it has a weight of around 14 (with 20 particles).
+            # Conversely, if the maximum weight of all the particles is less than 10 (with 20 particles), we can guess that the
+            # estimated pose is probably wrong. Hence, we should generate a new particle cloud
+            
+            if not self.is_warning_raised:
+                self.logger.warn("The robot has lost its position. Re-localising")
+                self.is_warning_raised = True
+
+            if self.regenerate_cloud_noise > 5: # Hard-code a limit to give up
+                self.logger.warn("The robot is unable to localise itself with the given number of particles. Retrying...")
+                self.regenerate_cloud_noise = 1
+            elif self.estimated_pose_weight <= self.previous_estimated_pose_weight: # We want the weight to keep increasing
+                # If not, widen the search area
+                self.regenerate_cloud_noise += 0.05 # The noise used for regeneration will keep increasing to widen the search area
+            else:
+                self.regenerate_cloud_noise = 1
+            self._regenerate_new_particle_cloud(scan)
+        else:
+            self.regenerate_cloud_noise = 1
+            self._update_particle_cloud_with_sensor_model()
+
+            if self.is_warning_raised:
+                self.is_warning_raised = False
+                self.logger.info("Location re-aquired")
+        
+        self._update_weights(scan)
+
+    def _update_weights(self, scan):
+        # Store the new weight of each new pose
+        self.weights = self._get_weights(self.particlecloud.poses, scan)
+        
+    def _get_weights(self, poses, scan):
+        weights = []
+        for pose in poses:
+            weights.append(self.sensor_model.get_weight(scan, pose))
+        return weights
+
+    def _update_particle_cloud_with_sensor_model(self):
+        sampled_particles = self._systematic_resampling(self.particlecloud.poses, self.weights, self.NUMBER_PREDICTED_READINGS)
         
         # Add a tiny bit of noise to prevent the point cloud from collapsing
         new_particles = []
         for i in range(self.NUMBER_PREDICTED_READINGS):
             original_pose = sampled_particles[i]
-            pose_after_noise = Pose()
-            pose_after_noise.position.x = original_pose.position.x + random.gauss(0, self.UPDATE_X_NOISE)
-            pose_after_noise.position.y = original_pose.position.y + random.gauss(0, self.UPDATE_Y_NOISE)
-            pose_after_noise.position.z = original_pose.position.z + random.gauss(0, self.UPDATE_Z_NOISE)
-            pose_after_noise.orientation = rotateQuaternion(original_pose.orientation, random.gauss(0, self.UPDATE_Q_NOISE))
+            pose_after_noise = self._add_noise_to_pose(original_pose,
+                                                    self.UPDATE_X_NOISE, 
+                                                    self.UPDATE_Y_NOISE, 
+                                                    self.UPDATE_Z_NOISE, 
+                                                    self.UPDATE_Q_NOISE)
             new_particles.append(pose_after_noise)
-
+        
         self.particlecloud.poses = new_particles
 
-        # Store the new weight of each new pose
-        self.weights = []
-        for pose in self.particlecloud.poses:
-            self.weights.append(self.sensor_model.get_weight(scan, pose))
+    def _regenerate_new_particle_cloud(self, scan):
+        # Naive method: randomly remove 90% of the particles and add them back, scattered over the map
+        num_particles_to_keep = int(self.NUMBER_PREDICTED_READINGS * 0.1)
+        num_particles_to_regenerate = self.NUMBER_PREDICTED_READINGS - num_particles_to_keep
+
+        new_particles = random.sample(self.particlecloud.poses, num_particles_to_keep)
+        new_particles.append(self.estimated_pose) # Ensure that the previous estimated_pose (without any noise) 
+        # is always in the set. This ensures that our weight increases
+        for i in range(num_particles_to_regenerate - 1):
+            # As we don't know where the robot is, our best bet is to add points around the current estimated pose
+            # (which is the pose with the highest posterior probabiity)
+            new_particle = self._add_noise_to_pose(self.estimated_pose,
+                                                   self.regenerate_cloud_noise,
+                                                   self.regenerate_cloud_noise,
+                                                   0, 
+                                                   2) 
+            new_particles.append(new_particle)
+
+        new_weights = self._get_weights(new_particles, scan)
+        new_particles_sampled = self._systematic_resampling(new_particles, new_weights, self.NUMBER_PREDICTED_READINGS)
         
+        self.particlecloud.poses = new_particles_sampled
+
 
     def estimate_pose(self):
         """
@@ -179,6 +252,8 @@ class PFLocaliser(PFLocaliserBase):
                 highest_weight = self.weights[i]
                 best_pose_index = i
         
-        estimated_pose = self.particlecloud.poses[best_pose_index]
+        self.previous_estimated_pose_weight = self.estimated_pose_weight # Push the previous weight into history
+        self.estimated_pose = self.particlecloud.poses[best_pose_index]
+        self.estimated_pose_weight = highest_weight
 
-        return estimated_pose
+        return self.estimated_pose
