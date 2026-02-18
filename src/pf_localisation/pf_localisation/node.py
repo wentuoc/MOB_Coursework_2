@@ -24,6 +24,9 @@ import pf_localisation
 import sys
 from copy import deepcopy
 
+from tf2_ros import Buffer, TransformListener
+import tf2_geometry_msgs
+
 class ParticleFilterLocalisationNode(Node):
     def __init__(self):
         super().__init__("pf_localisation")
@@ -38,7 +41,7 @@ class ParticleFilterLocalisationNode(Node):
         self._initial_pose_received = False
 
         self._pose_publisher = self.create_publisher(PoseStamped, "/estimatedpose", 10)
-        self._amcl_pose_publisher = self.create_publisher(PoseWithCovarianceStamped, "/amcl_pose", 10)
+        # self._amcl_pose_publisher = self.create_publisher(PoseWithCovarianceStamped, "/amcl_pose", 10)
         self._cloud_publisher = self.create_publisher(PoseArray, "/particlecloud", 10)
         self._tf_publisher = self.create_publisher(TFMessage, "/tf", 10)
 
@@ -52,10 +55,10 @@ class ParticleFilterLocalisationNode(Node):
         except Exception as e:
             self.get_logger().error(e)
             self.get_logger().error("""Problem getting a map. Check that you have an activated map_server
-run: ros2 run nav2_map_server map_server --ros-args -p yaml_filename:=<path_to_your_map_yaml_file>
-configure: ros2 lifecycle set map_server configure
-activate: ros2 lifecycle set map_server activate
-""")
+                run: ros2 run nav2_map_server map_server --ros-args -p yaml_filename:=<path_to_your_map_yaml_file>
+                configure: ros2 lifecycle set map_server configure
+                activate: ros2 lifecycle set map_server activate
+                """)
             sys.exit(1)
         self.get_logger().info("Map received. %d X %d, %f px/m." %
                       (ocuccupancy_map.info.width, ocuccupancy_map.info.height,
@@ -69,6 +72,28 @@ activate: ros2 lifecycle set map_server activate
                                                          self._initial_pose_callback, 1)
         self._odometry_subscriber = self.create_subscription(Odometry, "/odom", 
                                                      self._odometry_callback, 1)
+        
+        # Set up subscribers and publishers to transform odom data in /base_pose_ground_truth to a pose
+        # This uses the map -> odom tf published by the amcl node
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        self.create_subscription(Odometry, '/base_pose_ground_truth',
+                                 self.gt_callback, 10)
+        self.pub = self.create_publisher(PoseStamped, '/ground_truth_pose', 10)
+
+    def gt_callback(self, msg: Odometry):
+        pose = PoseStamped()
+        pose.header = msg.header
+        pose.pose = msg.pose.pose
+
+        try:
+            transform = self.tf_buffer.lookup_transform('map', pose.header.frame_id, rclpy.time.Time())
+            pose_in_map = tf2_geometry_msgs.tf2_geometry_msgs.do_transform_pose_stamped(pose, transform)
+            self.pub.publish(pose_in_map)
+        except Exception as e:
+            self.get_logger().warn(f"TF transform failed: {e}")
+
 
     def _initial_pose_callback(self, pose):
         """ called when RViz sends a user supplied initial pose estimate """
@@ -100,7 +125,7 @@ activate: ros2 lifecycle set map_server activate
         if self._initial_pose_received:
             if  self._sufficientMovementDetected(self._particle_filter.estimatedpose):
                 # ----- Publish the new pose
-                self._amcl_pose_publisher.publish(self._particle_filter.estimatedpose)
+                # self._amcl_pose_publisher.publish(self._particle_filter.estimatedpose)
                 estimatedpose =  PoseStamped()
                 estimatedpose.pose = self._particle_filter.estimatedpose.pose.pose
                 estimatedpose.header.stamp = self._particle_filter.estimatedpose.header.stamp

@@ -38,6 +38,10 @@ install(DIRECTORY pf_localisation/
   DESTINATION lib/${PROJECT_NAME}/pf_localisation
 )
 
+install(DIRECTORY data/
+  DESTINATION share/${PROJECT_NAME}/data
+)
+
 # Set up the libraries and header search paths for this target
 target_link_libraries(laser_trace ${Boost_LIBRARIES} ${PYTHON_LIBRARIES})
 target_include_directories(laser_trace PRIVATE ${PYTHON_INCLUDE_DIRS})

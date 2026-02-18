@@ -94,12 +94,15 @@ class PFLocaliserBase(object):
                the particle filter based on
         """
         if not self.sensor_model_initialised:
-            self.sensor_model.set_laser_scan_parameters(self.NUMBER_PREDICTED_READINGS,
-                                                        scan.range_max,
-                                                        len(scan.ranges),
-                                                        scan.angle_min,
-                                                        scan.angle_max)
-            self.sensor_model_initialised = True
+            try: # This fails when starting the rosbag from a paused state
+                self.sensor_model.set_laser_scan_parameters(self.NUMBER_PREDICTED_READINGS,
+                                                            scan.range_max,
+                                                            len(scan.ranges),
+                                                            scan.angle_min,
+                                                            scan.angle_max)
+                self.sensor_model_initialised = True
+            except Exception as e:
+                self._logger.warn(f"Sensor model initialisation failed: {e}")
         with self._update_lock:
             t = time.time()
             # ----- Call user-implemented particle filter update method

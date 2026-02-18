@@ -28,6 +28,7 @@ def generate_launch_description():
     package="nav2_lifecycle_manager",
     executable="lifecycle_manager",
     parameters=[{"node_names": ["amcl","map_server"], "autostart": True, "use_sim_time": True}],
+    # parameters=[{"node_names": ["map_server"], "autostart": True, "use_sim_time": True}],
     arguments= [
     '--ros-args',
     '--log-level',
@@ -47,7 +48,7 @@ def generate_launch_description():
     stage_ros2 = Node(
         package="stage_ros2",
         executable="stage_ros2",
-        parameters=[{"world_file": os.path.join(pf_p, "data", "sim_data", "meeting.world"), "use_sim_time": True}],
+        parameters=[{"world_file": LaunchConfiguration('world_path'), "use_sim_time": True}],
         arguments= [
         '--ros-args',
         '--log-level',
@@ -84,6 +85,22 @@ def generate_launch_description():
         # 'ERROR',
         # ]
         )
+    
+    amcl = Node(
+        package="nav2_amcl",
+        executable="amcl",
+        parameters=[
+            {"use_sim_time": True},
+        ],
+        remappings=[
+            ('/scan', '/base_scan'),
+        ], 
+        arguments=[
+            '--ros-args',
+            '--log-level',
+            'ERROR',
+        ]
+    )
 
 
     ld = LaunchDescription()
@@ -92,15 +109,15 @@ def generate_launch_description():
     ld.add_action(lifecycle_manager)
 
 #SIM_DATA
-    ld.add_action(socspioneer)
-    ld.add_action(socspioneer_key)
+    # ld.add_action(socspioneer)
+    # ld.add_action(socspioneer_key)
 
 #REAL_DATA
     # ld.add_action(foxglove_bridge)
     # ld.add_action(stage_ros2)
-    # ld.add_action(map_server)
-    # ld.add_action(amcl)
-    # ld.add_action(rviz2)
+    ld.add_action(map_server)
+    ld.add_action(amcl)
+    ld.add_action(rviz2)
     ld.add_action(pf_localisation)
 
     return ld
