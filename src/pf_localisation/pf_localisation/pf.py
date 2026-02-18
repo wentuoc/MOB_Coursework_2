@@ -26,38 +26,36 @@ class PFLocaliser(PFLocaliserBase):
         self.logger = logger
         self.is_warning_raised = False
 
-        # Other magic numbers
-        self.WEIGHT_THRESHOLD = 10
-
         # ----- Set motion model parameters
-        # TO FINE TUNE
-        self.ODOM_ROTATION_NOISE = 0.2 # Odometry model rotation noise
-        self.ODOM_TRANSLATION_NOISE = 0.2 # Odometry model x axis (forward) noise
-        self.ODOM_DRIFT_NOISE = 0.2 # Odometry model y axis (side-to-side) noise
+        self.ODOM_ROTATION_NOISE = 0.05    # Odometry model rotation noise
+        self.ODOM_TRANSLATION_NOISE = 0.05 # Odometry model x axis (forward) noise
+        self.ODOM_DRIFT_NOISE = 0.05 # Odometry model y axis (side-to-side) noise
 
         # ----- Sensor model parameters
         self.STANDARD_NUMBER_PREDICTED_READINGS = 20
         self.number_predicted_readings = 20
 
         # ----- Point cloud initialisation parameters
-        self.INIT_X_NOISE = 0.1
-        self.INIT_Y_NOISE = 0.1
+        self.INIT_X_NOISE = 0.5
+        self.INIT_Y_NOISE = 0.5
         self.INIT_Z_NOISE = 0 # We are only in 2D
-        self.INIT_Q_NOISE = 0.05
+        self.INIT_Q_NOISE = 0.5
 
         # ----- Point cloud update parameters
-        self.UPDATE_X_NOISE = 0.02 # TODO: fine-tune
-        self.UPDATE_Y_NOISE = 0.02
+        self.UPDATE_X_NOISE = 0.01
+        self.UPDATE_Y_NOISE = 0.01
         self.UPDATE_Z_NOISE = 0 
         self.UPDATE_Q_NOISE = 0.01
 
         # ----- Point cloud regeneration parameters (for lost robots)
+        self.WEIGHT_THRESHOLD = 8
         self.regenerate_cloud_noise = 1
         self.regenerate_cloud_angular_noise = 2 # Ensure that all angles are covered
         self.REGENERATE_CLOUD_NOISE_INCREMENT = 0.05
-        self.REGENERATE_CLOUD_NOISE_LIMIT = 5
+        self.REGENERATE_CLOUD_NOISE_LIMIT = 10
         self.REGENERATE_CLOUD_KEEP_PERCENTAGE = 0.1
         
+        self.POSE_ESTIMATION_CLUSTER_DISTANCE = 0.05 # in cm
        
     def initialise_particle_cloud(self, initialpose):
         """
@@ -294,7 +292,6 @@ class PFLocaliser(PFLocaliserBase):
 
         best_pose = self.particlecloud.poses[best_pose_index]
 
-        count = 0
         sum_of_weights = 0
         estimated_pose_x = 0
         estimated_pose_y = 0
@@ -308,7 +305,7 @@ class PFLocaliser(PFLocaliserBase):
             distance = math.sqrt((pose.position.x - best_pose.position.x) ** 2
                                  + (pose.position.y - best_pose.position.y) ** 2
                                  + (pose.position.z - best_pose.position.z) ** 2)
-            if distance <= 0.05:
+            if distance <= self.POSE_ESTIMATION_CLUSTER_DISTANCE:
                 estimated_pose_x += weight * pose.position.x
                 estimated_pose_y += weight * pose.position.y
                 estimated_pose_z += weight * pose.position.z
